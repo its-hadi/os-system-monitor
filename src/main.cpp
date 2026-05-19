@@ -20,7 +20,7 @@
 using namespace std;
 
 const int WINDOW_WIDTH = 1100;
-const int WINDOW_HEIGHT = 720;
+const int WINDOW_HEIGHT = 800;
 const int UPDATE_INTERVAL_MS = 500;
 
 struct CpuSample {
@@ -350,33 +350,46 @@ void drawText(SDL_Renderer* renderer, TTF_Font* font, const string& text, int x,
     SDL_FreeSurface(surface);
 }
 
-void drawBar(SDL_Renderer* renderer, TTF_Font* font, int x, int y, int w, int h,
-             const string& label, double percent, SDL_Color fillColor) {
-    SDL_Color textColor = {235, 239, 245, 255};
-    SDL_Color mutedText = {160, 169, 181, 255};
-    SDL_Color panel = {28, 35, 47, 255};
-    SDL_Color border = {63, 74, 91, 255};
-
-    drawText(renderer, font, label, x, y - 25, textColor);
-    drawText(renderer, font, formatPercent(percent), x + w - 70, y - 25, mutedText);
-
-    SDL_Rect background = {x, y, w, h};
-    drawFilledRect(renderer, background, panel);
-    drawOutlineRect(renderer, background, border);
-
-    int fillWidth = (int)(w * clamp(percent, 0.0, 100.0) / 100.0);
-    SDL_Rect fill = {x, y, fillWidth, h};
-    drawFilledRect(renderer, fill, fillColor);
+void drawCard(SDL_Renderer* renderer, const SDL_Rect& rect) {
+    drawFilledRect(renderer, rect, SDL_Color{22, 28, 39, 255});
+    drawOutlineRect(renderer, rect, SDL_Color{61, 73, 91, 255});
 }
 
-void drawButton(SDL_Renderer* renderer, TTF_Font* font, const Button& button, bool active) {
-    SDL_Color buttonColor = active ? SDL_Color{62, 118, 255, 255} : SDL_Color{35, 43, 58, 255};
-    SDL_Color borderColor = active ? SDL_Color{125, 161, 255, 255} : SDL_Color{70, 82, 100, 255};
-    SDL_Color textColor = {240, 244, 250, 255};
+void drawCpuIcon(SDL_Renderer* renderer, int x, int y, SDL_Color accent) {
+    SDL_Rect chip = {x + 7, y + 7, 26, 26};
+    SDL_Rect core = {x + 14, y + 14, 12, 12};
+    drawFilledRect(renderer, chip, accent);
+    drawFilledRect(renderer, core, SDL_Color{13, 18, 26, 255});
+    for (int i = 0; i < 4; i++) {
+        int offset = 9 + i * 7;
+        drawLine(renderer, x + offset, y + 2, x + offset, y + 7, accent);
+        drawLine(renderer, x + offset, y + 33, x + offset, y + 38, accent);
+        drawLine(renderer, x + 2, y + offset, x + 7, y + offset, accent);
+        drawLine(renderer, x + 33, y + offset, x + 38, y + offset, accent);
+    }
+}
 
-    drawFilledRect(renderer, button.rect, buttonColor);
-    drawOutlineRect(renderer, button.rect, borderColor);
-    drawText(renderer, font, button.label, button.rect.x + 13, button.rect.y + 9, textColor);
+void drawMemoryIcon(SDL_Renderer* renderer, int x, int y, SDL_Color accent) {
+    SDL_Rect base = {x + 4, y + 10, 32, 20};
+    drawFilledRect(renderer, base, accent);
+    drawFilledRect(renderer, SDL_Rect{x + 8, y + 14, 24, 12}, SDL_Color{13, 18, 26, 255});
+    for (int i = 0; i < 5; i++) {
+        drawLine(renderer, x + 7 + i * 6, y + 30, x + 7 + i * 6, y + 36, accent);
+    }
+}
+
+void drawDiskIcon(SDL_Renderer* renderer, int x, int y, SDL_Color accent) {
+    SDL_Rect body = {x + 5, y + 6, 30, 28};
+    drawFilledRect(renderer, body, accent);
+    drawFilledRect(renderer, SDL_Rect{x + 10, y + 11, 20, 7}, SDL_Color{13, 18, 26, 255});
+    drawFilledRect(renderer, SDL_Rect{x + 14, y + 24, 12, 5}, SDL_Color{13, 18, 26, 255});
+}
+
+void drawStatusIcon(SDL_Renderer* renderer, int x, int y, SDL_Color accent) {
+    SDL_Rect badge = {x, y, 42, 42};
+    drawFilledRect(renderer, badge, SDL_Color{30, 38, 52, 255});
+    drawOutlineRect(renderer, badge, accent);
+    drawCpuIcon(renderer, x + 1, y + 1, accent);
 }
 
 void drawIconFallback(SDL_Renderer* renderer, int x, int y) {
@@ -408,17 +421,58 @@ SDL_Texture* loadIconTexture(SDL_Renderer* renderer) {
     return texture;
 }
 
+void drawBar(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* smallFont,
+             int x, int y, int w, int h, const string& label, const string& detail,
+             double percent, SDL_Color fillColor, int iconType) {
+    SDL_Color textColor = {235, 239, 245, 255};
+    SDL_Color mutedText = {160, 169, 181, 255};
+    SDL_Color panel = {22, 28, 39, 255};
+    SDL_Color border = {63, 74, 91, 255};
+
+    SDL_Rect card = {x, y, w, h};
+    drawCard(renderer, card);
+
+    if (iconType == 0) drawCpuIcon(renderer, x + 18, y + 18, fillColor);
+    if (iconType == 1) drawMemoryIcon(renderer, x + 18, y + 18, fillColor);
+    if (iconType == 2) drawDiskIcon(renderer, x + 18, y + 18, fillColor);
+
+    drawText(renderer, smallFont, label, x + 70, y + 16, mutedText);
+    drawText(renderer, font, formatPercent(percent), x + 70, y + 38, textColor);
+    drawText(renderer, smallFont, detail, x + 70, y + 64, mutedText);
+
+    SDL_Rect background = {x + 18, y + h - 22, w - 36, 10};
+    drawFilledRect(renderer, background, panel);
+    drawOutlineRect(renderer, background, border);
+
+    int fillWidth = (int)((w - 36) * clamp(percent, 0.0, 100.0) / 100.0);
+    SDL_Rect fill = {x + 18, y + h - 22, fillWidth, 10};
+    drawFilledRect(renderer, fill, fillColor);
+}
+
+void drawButton(SDL_Renderer* renderer, TTF_Font* font, const Button& button, bool active) {
+    SDL_Color buttonColor = active ? SDL_Color{62, 118, 255, 255} : SDL_Color{35, 43, 58, 255};
+    SDL_Color borderColor = active ? SDL_Color{125, 161, 255, 255} : SDL_Color{70, 82, 100, 255};
+    SDL_Color textColor = {240, 244, 250, 255};
+
+    drawFilledRect(renderer, button.rect, buttonColor);
+    drawOutlineRect(renderer, button.rect, borderColor);
+    drawText(renderer, font, button.label, button.rect.x + 13, button.rect.y + 9, textColor);
+}
+
 void sortProcesses(vector<ProcessInfo>& processes, SortMode mode) {
     if (mode == SortMode::CPU) {
-        sort(processes.begin(), processes.end(), [](const ProcessInfo& a, const ProcessInfo& b) {
+        stable_sort(processes.begin(), processes.end(), [](const ProcessInfo& a, const ProcessInfo& b) {
+            if (fabs(a.cpuPercent - b.cpuPercent) < 0.05) return a.pid < b.pid;
             return a.cpuPercent > b.cpuPercent;
         });
     } else if (mode == SortMode::MEMORY) {
-        sort(processes.begin(), processes.end(), [](const ProcessInfo& a, const ProcessInfo& b) {
+        stable_sort(processes.begin(), processes.end(), [](const ProcessInfo& a, const ProcessInfo& b) {
+            if (a.memoryKB == b.memoryKB) return a.pid < b.pid;
             return a.memoryKB > b.memoryKB;
         });
     } else {
-        sort(processes.begin(), processes.end(), [](const ProcessInfo& a, const ProcessInfo& b) {
+        stable_sort(processes.begin(), processes.end(), [](const ProcessInfo& a, const ProcessInfo& b) {
+            if (a.name == b.name) return a.pid < b.pid;
             return a.name < b.name;
         });
     }
@@ -445,25 +499,25 @@ void drawProcessTable(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* smallFon
     SDL_Color line = {45, 55, 72, 255};
     SDL_Color selected = {42, 77, 135, 255};
 
-    SDL_Rect table = {40, 300, 1020, 350};
+    SDL_Rect table = {40, 360, 1020, 360};
     drawFilledRect(renderer, table, panel);
     drawOutlineRect(renderer, table, border);
 
-    SDL_Rect tableHeader = {40, 300, 1020, 42};
+    SDL_Rect tableHeader = {40, 360, 1020, 44};
     drawFilledRect(renderer, tableHeader, header);
 
-    drawText(renderer, font, "Running Processes", 58, 310, text);
-    drawText(renderer, smallFont, "Sorted by: " + sortModeName(sortMode), 860, 314, muted);
+    drawText(renderer, font, "Running Processes", 58, 371, text);
+    drawText(renderer, smallFont, "Sorted by: " + sortModeName(sortMode), 860, 375, muted);
 
-    drawText(renderer, smallFont, "PID", 60, 355, muted);
-    drawText(renderer, smallFont, "Process Name", 150, 355, muted);
-    drawText(renderer, smallFont, "CPU", 610, 355, muted);
-    drawText(renderer, smallFont, "Memory", 760, 355, muted);
+    drawText(renderer, smallFont, "PID", 60, 420, muted);
+    drawText(renderer, smallFont, "Process Name", 150, 420, muted);
+    drawText(renderer, smallFont, "CPU", 610, 420, muted);
+    drawText(renderer, smallFont, "Memory", 760, 420, muted);
 
-    drawLine(renderer, 55, 380, 1045, 380, line);
+    drawLine(renderer, 55, 445, 1045, 445, line);
 
     const int rowHeight = 28;
-    const int firstRowY = 388;
+    const int firstRowY = 453;
     const int maxRows = 9;
 
     for (int i = 0; i < maxRows; i++) {
@@ -494,20 +548,20 @@ void drawProcessTable(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* smallFon
         drawText(renderer, smallFont, formatKB(p.memoryKB), 760, y, text);
     }
 
-    string scrollText = "Scroll: " + to_string(min(scrollOffset + maxRows, (int)processes.size())) + "/" + to_string(processes.size());
-    drawText(renderer, smallFont, scrollText, 58, 620, muted);
-    drawText(renderer, smallFont, "Click a row to select a process. Use mouse wheel or Up/Down to scroll.", 330, 620, muted);
+    string scrollText = "Showing: " + to_string(min(scrollOffset + maxRows, (int)processes.size())) + " / " + to_string(processes.size());
+    drawText(renderer, smallFont, scrollText, 58, 694, muted);
+    drawText(renderer, smallFont, "Click a row to select a process. Use mouse wheel or Up/Down to scroll.", 330, 694, muted);
 }
 
 void drawFooter(SDL_Renderer* renderer, TTF_Font* smallFont, bool paused) {
     SDL_Color muted = {160, 169, 181, 255};
     SDL_Color warning = {255, 196, 87, 255};
 
-    string controls = "Controls: C = sort CPU | M = sort Memory | N = sort Name | P = pause updates | R = reset scroll | Esc = quit";
-    drawText(renderer, smallFont, controls, 40, 674, paused ? warning : muted);
+    string controls = "Controls: C = CPU | M = Memory | N = Name | P = pause updates | R = reset scroll | Esc = quit";
+    drawText(renderer, smallFont, controls, 40, 755, paused ? warning : muted);
 
     if (paused) {
-        drawText(renderer, smallFont, "Updates paused", 920, 674, warning);
+        drawText(renderer, smallFont, "Updates paused", 920, 755, warning);
     }
 }
 
@@ -587,14 +641,14 @@ int main(int argc, char* argv[]) {
     SDL_Texture* iconTexture = loadIconTexture(renderer);
 
     vector<Button> buttons = {
-        {{40, 230, 135, 42}, "Sort: CPU", SortMode::CPU},
-        {{190, 230, 165, 42}, "Sort: Memory", SortMode::MEMORY},
-        {{370, 230, 145, 42}, "Sort: Name", SortMode::NAME}
+        {{40, 300, 135, 42}, "Sort: CPU", SortMode::CPU},
+        {{190, 300, 165, 42}, "Sort: Memory", SortMode::MEMORY},
+        {{370, 300, 145, 42}, "Sort: Name", SortMode::NAME}
     };
 
     bool running = true;
     bool paused = false;
-    SortMode sortMode = SortMode::CPU;
+    SortMode sortMode = SortMode::MEMORY;
     int scrollOffset = 0;
     int selectedPid = -1;
     string selectedName = "None";
@@ -634,7 +688,7 @@ int main(int argc, char* argv[]) {
                 }
 
                 const int rowHeight = 28;
-                const int firstRowY = 388;
+                const int firstRowY = 453;
                 const int maxRows = 9;
                 for (int i = 0; i < maxRows; i++) {
                     int rowY = firstRowY + i * rowHeight;
@@ -657,17 +711,15 @@ int main(int argc, char* argv[]) {
             processes = readProcesses();
             sortProcesses(processes, sortMode);
             lastUpdate = now;
-        } else {
-            sortProcesses(processes, sortMode);
         }
 
         setColor(renderer, SDL_Color{13, 18, 26, 255});
         SDL_RenderClear(renderer);
 
         // Header panel
-        SDL_Rect header = {0, 0, WINDOW_WIDTH, 110};
+        SDL_Rect header = {0, 0, WINDOW_WIDTH, 112};
         drawFilledRect(renderer, header, SDL_Color{18, 24, 34, 255});
-        drawLine(renderer, 0, 110, WINDOW_WIDTH, 110, SDL_Color{48, 58, 74, 255});
+        drawLine(renderer, 0, 112, WINDOW_WIDTH, 112, SDL_Color{48, 58, 74, 255});
 
         if (iconTexture) {
             SDL_Rect iconDst = {38, 27, 56, 56};
@@ -677,43 +729,42 @@ int main(int argc, char* argv[]) {
         }
 
         drawText(renderer, titleFont, "OS System Monitor", 112, 24, SDL_Color{245, 248, 252, 255});
-        drawText(renderer, font, "C++ / SDL2 visual interface for CPU, memory, disk, and process activity", 114, 64, SDL_Color{166, 176, 190, 255});
+        drawText(renderer, font, "Live C++ / SDL2 dashboard for CPU, memory, disk, and Linux process activity", 114, 64, SDL_Color{166, 176, 190, 255});
+        drawText(renderer, smallFont, paused ? "PAUSED" : "LIVE", 995, 44, paused ? SDL_Color{255, 196, 87, 255} : SDL_Color{126, 231, 135, 255});
 
         // Summary cards
-        SDL_Rect card1 = {40, 140, 320, 65};
-        SDL_Rect card2 = {390, 140, 320, 65};
-        SDL_Rect card3 = {740, 140, 320, 65};
-        drawFilledRect(renderer, card1, SDL_Color{22, 28, 39, 255});
-        drawFilledRect(renderer, card2, SDL_Color{22, 28, 39, 255});
-        drawFilledRect(renderer, card3, SDL_Color{22, 28, 39, 255});
-        drawOutlineRect(renderer, card1, SDL_Color{63, 74, 91, 255});
-        drawOutlineRect(renderer, card2, SDL_Color{63, 74, 91, 255});
-        drawOutlineRect(renderer, card3, SDL_Color{63, 74, 91, 255});
+        SDL_Rect card1 = {40, 130, 320, 72};
+        SDL_Rect card2 = {390, 130, 320, 72};
+        SDL_Rect card3 = {740, 130, 320, 72};
+        drawCard(renderer, card1);
+        drawCard(renderer, card2);
+        drawCard(renderer, card3);
 
-        drawText(renderer, smallFont, "Selected Process", 60, 150, SDL_Color{160, 169, 181, 255});
+        drawStatusIcon(renderer, 300, 145, SDL_Color{88, 166, 255, 255});
+        drawStatusIcon(renderer, 650, 145, SDL_Color{126, 231, 135, 255});
+        drawStatusIcon(renderer, 1000, 145, SDL_Color{255, 184, 87, 255});
+
+        drawText(renderer, smallFont, "Selected Process", 60, 142, SDL_Color{160, 169, 181, 255});
         string selectedText = selectedPid == -1 ? "None" : to_string(selectedPid) + " - " + selectedName;
-        if (selectedText.size() > 28) selectedText = selectedText.substr(0, 25) + "...";
-        drawText(renderer, font, selectedText, 60, 174, SDL_Color{235, 239, 245, 255});
+        if (selectedText.size() > 25) selectedText = selectedText.substr(0, 22) + "...";
+        drawText(renderer, font, selectedText, 60, 168, SDL_Color{235, 239, 245, 255});
 
-        drawText(renderer, smallFont, "Update Interval", 410, 150, SDL_Color{160, 169, 181, 255});
-        drawText(renderer, font, paused ? "Paused" : "Every 500ms", 410, 174, SDL_Color{235, 239, 245, 255});
+        drawText(renderer, smallFont, "Update Interval", 410, 142, SDL_Color{160, 169, 181, 255});
+        drawText(renderer, font, paused ? "Paused" : "Every 500ms", 410, 168, SDL_Color{235, 239, 245, 255});
 
-        drawText(renderer, smallFont, "Processes Found", 760, 150, SDL_Color{160, 169, 181, 255});
-        drawText(renderer, font, to_string(processes.size()), 760, 174, SDL_Color{235, 239, 245, 255});
+        drawText(renderer, smallFont, "Processes Found", 760, 142, SDL_Color{160, 169, 181, 255});
+        drawText(renderer, font, to_string(processes.size()), 760, 168, SDL_Color{235, 239, 245, 255});
+
+        // Resource cards
+        drawBar(renderer, font, smallFont, 40, 220, 320, 64, "CPU Usage", "Total processor activity", stats.cpuPercent, SDL_Color{88, 166, 255, 255}, 0);
+        drawBar(renderer, font, smallFont, 390, 220, 320, 64, "Memory Usage", formatKB(stats.memoryUsedKB) + " / " + formatKB(stats.memoryTotalKB), stats.memoryPercent, SDL_Color{126, 231, 135, 255}, 1);
+        drawBar(renderer, font, smallFont, 740, 220, 320, 64, "Disk Usage", formatBytes(stats.diskUsedBytes) + " / " + formatBytes(stats.diskTotalBytes), stats.diskPercent, SDL_Color{255, 184, 87, 255}, 2);
 
         // Buttons
         for (const Button& button : buttons) {
             drawButton(renderer, font, button, button.mode == sortMode);
         }
-        drawText(renderer, smallFont, "Tip: click buttons or use C / M / N keys", 540, 243, SDL_Color{160, 169, 181, 255});
-
-        // Bars
-        drawBar(renderer, font, 40, 94, 260, 14, "CPU", stats.cpuPercent, SDL_Color{88, 166, 255, 255});
-        drawBar(renderer, font, 320, 94, 260, 14, "Memory", stats.memoryPercent, SDL_Color{126, 231, 135, 255});
-        drawBar(renderer, font, 600, 94, 260, 14, "Disk", stats.diskPercent, SDL_Color{255, 184, 87, 255});
-
-        drawText(renderer, smallFont, formatKB(stats.memoryUsedKB) + " / " + formatKB(stats.memoryTotalKB), 320, 112, SDL_Color{160, 169, 181, 255});
-        drawText(renderer, smallFont, formatBytes(stats.diskUsedBytes) + " / " + formatBytes(stats.diskTotalBytes), 600, 112, SDL_Color{160, 169, 181, 255});
+        drawText(renderer, smallFont, "Tip: click buttons or press C / M / N. Default is Memory to keep the table stable.", 540, 313, SDL_Color{160, 169, 181, 255});
 
         drawProcessTable(renderer, font, smallFont, processes, scrollOffset, selectedPid, sortMode);
         drawFooter(renderer, smallFont, paused);
