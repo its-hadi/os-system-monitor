@@ -3,7 +3,6 @@
 #include <SDL2/SDL_image.h>
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cctype>
 #include <dirent.h>
@@ -20,7 +19,7 @@
 using namespace std;
 
 const int WINDOW_WIDTH = 1100;
-const int WINDOW_HEIGHT = 800;
+const int WINDOW_HEIGHT = 820;
 const int UPDATE_INTERVAL_MS = 500;
 
 struct CpuSample {
@@ -99,10 +98,16 @@ vector<string> splitWhitespace(const string& text) {
     vector<string> tokens;
     stringstream ss(text);
     string token;
-    while (ss >> token) {
-        tokens.push_back(token);
-    }
+    while (ss >> token) tokens.push_back(token);
     return tokens;
+}
+
+bool isNumberString(const string& text) {
+    if (text.empty()) return false;
+    for (char c : text) {
+        if (!isdigit((unsigned char)c)) return false;
+    }
+    return true;
 }
 
 CpuSample readCpuSample() {
@@ -185,18 +190,8 @@ void readDiskStats(SystemStats& stats) {
 
         stats.diskTotalBytes = total;
         stats.diskUsedBytes = used;
-        if (total > 0) {
-            stats.diskPercent = 100.0 * (double)used / (double)total;
-        }
+        if (total > 0) stats.diskPercent = 100.0 * (double)used / (double)total;
     }
-}
-
-bool isNumberString(const string& text) {
-    if (text.empty()) return false;
-    for (char c : text) {
-        if (!isdigit((unsigned char)c)) return false;
-    }
-    return true;
 }
 
 bool readProcessFromProc(int pid, ProcessInfo& process) {
@@ -211,17 +206,12 @@ bool readProcessFromProc(int pid, ProcessInfo& process) {
 
     size_t openParen = line.find('(');
     size_t closeParen = line.rfind(')');
-    if (openParen == string::npos || closeParen == string::npos || closeParen <= openParen) {
-        return false;
-    }
+    if (openParen == string::npos || closeParen == string::npos || closeParen <= openParen) return false;
 
     string name = line.substr(openParen + 1, closeParen - openParen - 1);
     string rest = line.substr(closeParen + 2);
     vector<string> fields = splitWhitespace(rest);
 
-    // /proc/[pid]/stat fields after process name start at field 3.
-    // field 14 = utime -> fields[11], field 15 = stime -> fields[12]
-    // field 24 = rss pages -> fields[21]
     if (fields.size() < 22) return false;
 
     unsigned long long utime = stoull(fields[11]);
@@ -265,10 +255,9 @@ vector<ProcessInfo> readProcesses() {
 
         int pid = stoi(name);
         ProcessInfo info;
-        if (readProcessFromProc(pid, info)) {
-            processes.push_back(info);
-        }
+        if (readProcessFromProc(pid, info)) processes.push_back(info);
     }
+
     closedir(procDir);
 #else
     vector<string> fakeNames = {"WindowServer", "Terminal", "Browser", "Music", "Code", "Database", "Mail", "System"};
@@ -305,9 +294,7 @@ string findFontPath() {
     };
 
     for (const string& path : candidates) {
-        if (access(path.c_str(), R_OK) == 0) {
-            return path;
-        }
+        if (access(path.c_str(), R_OK) == 0) return path;
     }
     return "";
 }
@@ -350,46 +337,102 @@ void drawText(SDL_Renderer* renderer, TTF_Font* font, const string& text, int x,
     SDL_FreeSurface(surface);
 }
 
-void drawCard(SDL_Renderer* renderer, const SDL_Rect& rect) {
-    drawFilledRect(renderer, rect, SDL_Color{22, 28, 39, 255});
-    drawOutlineRect(renderer, rect, SDL_Color{61, 73, 91, 255});
+void drawGradientBackground(SDL_Renderer* renderer) {
+    for (int y = 0; y < WINDOW_HEIGHT; y++) {
+        Uint8 r = 10 + (Uint8)(y / 90);
+        Uint8 g = 14 + (Uint8)(y / 130);
+        Uint8 b = 22 + (Uint8)(y / 85);
+        SDL_SetRenderDrawColor(renderer, r, g, b, 255);
+        SDL_RenderDrawLine(renderer, 0, y, WINDOW_WIDTH, y);
+    }
 }
 
-void drawCpuIcon(SDL_Renderer* renderer, int x, int y, SDL_Color accent) {
-    SDL_Rect chip = {x + 7, y + 7, 26, 26};
-    SDL_Rect core = {x + 14, y + 14, 12, 12};
-    drawFilledRect(renderer, chip, accent);
-    drawFilledRect(renderer, core, SDL_Color{13, 18, 26, 255});
+void drawSoftPanel(SDL_Renderer* renderer, const SDL_Rect& rect, SDL_Color fill, SDL_Color border) {
+    SDL_Rect shadow = {rect.x + 3, rect.y + 4, rect.w, rect.h};
+    drawFilledRect(renderer, shadow, SDL_Color{5, 8, 14, 120});
+    drawFilledRect(renderer, rect, fill);
+    drawOutlineRect(renderer, rect, border);
+}
+
+void drawChipIcon(SDL_Renderer* renderer, int x, int y, SDL_Color accent) {
+    SDL_Rect outer = {x, y, 44, 44};
+    SDL_Rect middle = {x + 8, y + 8, 28, 28};
+    SDL_Rect core = {x + 18, y + 18, 8, 8};
+
+    drawFilledRect(renderer, outer, accent);
+    drawFilledRect(renderer, middle, SDL_Color{13, 18, 26, 255});
+    drawFilledRect(renderer, core, SDL_Color{160, 230, 255, 255});
+
     for (int i = 0; i < 4; i++) {
-        int offset = 9 + i * 7;
-        drawLine(renderer, x + offset, y + 2, x + offset, y + 7, accent);
-        drawLine(renderer, x + offset, y + 33, x + offset, y + 38, accent);
-        drawLine(renderer, x + 2, y + offset, x + 7, y + offset, accent);
-        drawLine(renderer, x + 33, y + offset, x + 38, y + offset, accent);
+        int offset = 7 + i * 10;
+        drawLine(renderer, x + offset, y - 4, x + offset, y + 4, accent);
+        drawLine(renderer, x + offset, y + 40, x + offset, y + 48, accent);
+        drawLine(renderer, x - 4, y + offset, x + 4, y + offset, accent);
+        drawLine(renderer, x + 40, y + offset, x + 48, y + offset, accent);
     }
 }
 
 void drawMemoryIcon(SDL_Renderer* renderer, int x, int y, SDL_Color accent) {
-    SDL_Rect base = {x + 4, y + 10, 32, 20};
-    drawFilledRect(renderer, base, accent);
-    drawFilledRect(renderer, SDL_Rect{x + 8, y + 14, 24, 12}, SDL_Color{13, 18, 26, 255});
+    SDL_Rect body = {x, y + 8, 48, 28};
+    SDL_Rect cut = {x + 8, y + 14, 32, 8};
+
+    drawFilledRect(renderer, body, accent);
+    drawFilledRect(renderer, cut, SDL_Color{13, 18, 26, 255});
+
     for (int i = 0; i < 5; i++) {
-        drawLine(renderer, x + 7 + i * 6, y + 30, x + 7 + i * 6, y + 36, accent);
+        int pinX = x + 5 + i * 9;
+        drawLine(renderer, pinX, y + 36, pinX, y + 44, accent);
     }
 }
 
 void drawDiskIcon(SDL_Renderer* renderer, int x, int y, SDL_Color accent) {
-    SDL_Rect body = {x + 5, y + 6, 30, 28};
+    SDL_Rect body = {x, y + 4, 48, 38};
+    SDL_Rect slot = {x + 11, y + 11, 26, 7};
+    SDL_Rect light = {x + 34, y + 30, 6, 6};
+
     drawFilledRect(renderer, body, accent);
-    drawFilledRect(renderer, SDL_Rect{x + 10, y + 11, 20, 7}, SDL_Color{13, 18, 26, 255});
-    drawFilledRect(renderer, SDL_Rect{x + 14, y + 24, 12, 5}, SDL_Color{13, 18, 26, 255});
+    drawFilledRect(renderer, slot, SDL_Color{13, 18, 26, 255});
+    drawFilledRect(renderer, light, SDL_Color{13, 18, 26, 255});
 }
 
-void drawStatusIcon(SDL_Renderer* renderer, int x, int y, SDL_Color accent) {
-    SDL_Rect badge = {x, y, 42, 42};
-    drawFilledRect(renderer, badge, SDL_Color{30, 38, 52, 255});
-    drawOutlineRect(renderer, badge, accent);
-    drawCpuIcon(renderer, x + 1, y + 1, accent);
+void drawBar(SDL_Renderer* renderer, int x, int y, int w, int h, double percent, SDL_Color fillColor) {
+    SDL_Color background = {23, 30, 42, 255};
+    SDL_Color border = {61, 73, 92, 255};
+
+    SDL_Rect bg = {x, y, w, h};
+    drawFilledRect(renderer, bg, background);
+    drawOutlineRect(renderer, bg, border);
+
+    int fillWidth = (int)(w * clamp(percent, 0.0, 100.0) / 100.0);
+    SDL_Rect fill = {x, y, fillWidth, h};
+    drawFilledRect(renderer, fill, fillColor);
+}
+
+void drawMetricCard(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* smallFont,
+                    int x, int y, const string& title, const string& detail,
+                    double percent, SDL_Color accent, int iconType) {
+    SDL_Rect card = {x, y, 320, 108};
+    drawSoftPanel(renderer, card, SDL_Color{18, 24, 35, 255}, SDL_Color{58, 70, 90, 255});
+
+    if (iconType == 0) drawChipIcon(renderer, x + 24, y + 31, accent);
+    if (iconType == 1) drawMemoryIcon(renderer, x + 22, y + 31, accent);
+    if (iconType == 2) drawDiskIcon(renderer, x + 23, y + 31, accent);
+
+    drawText(renderer, font, title, x + 88, y + 22, SDL_Color{222, 229, 239, 255});
+    drawText(renderer, smallFont, formatPercent(percent), x + 238, y + 25, SDL_Color{166, 176, 190, 255});
+
+    drawBar(renderer, x + 88, y + 56, 205, 13, percent, accent);
+    drawText(renderer, smallFont, detail, x + 88, y + 77, SDL_Color{147, 158, 174, 255});
+}
+
+void drawButton(SDL_Renderer* renderer, TTF_Font* font, const Button& button, bool active) {
+    SDL_Color buttonColor = active ? SDL_Color{66, 123, 255, 255} : SDL_Color{30, 38, 53, 255};
+    SDL_Color borderColor = active ? SDL_Color{136, 171, 255, 255} : SDL_Color{66, 78, 99, 255};
+    SDL_Color textColor = {240, 244, 250, 255};
+
+    drawFilledRect(renderer, button.rect, buttonColor);
+    drawOutlineRect(renderer, button.rect, borderColor);
+    drawText(renderer, font, button.label, button.rect.x + 15, button.rect.y + 10, textColor);
 }
 
 void drawIconFallback(SDL_Renderer* renderer, int x, int y) {
@@ -421,58 +464,17 @@ SDL_Texture* loadIconTexture(SDL_Renderer* renderer) {
     return texture;
 }
 
-void drawBar(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* smallFont,
-             int x, int y, int w, int h, const string& label, const string& detail,
-             double percent, SDL_Color fillColor, int iconType) {
-    SDL_Color textColor = {235, 239, 245, 255};
-    SDL_Color mutedText = {160, 169, 181, 255};
-    SDL_Color panel = {22, 28, 39, 255};
-    SDL_Color border = {63, 74, 91, 255};
-
-    SDL_Rect card = {x, y, w, h};
-    drawCard(renderer, card);
-
-    if (iconType == 0) drawCpuIcon(renderer, x + 18, y + 18, fillColor);
-    if (iconType == 1) drawMemoryIcon(renderer, x + 18, y + 18, fillColor);
-    if (iconType == 2) drawDiskIcon(renderer, x + 18, y + 18, fillColor);
-
-    drawText(renderer, smallFont, label, x + 70, y + 16, mutedText);
-    drawText(renderer, font, formatPercent(percent), x + 70, y + 38, textColor);
-    drawText(renderer, smallFont, detail, x + 70, y + 64, mutedText);
-
-    SDL_Rect background = {x + 18, y + h - 22, w - 36, 10};
-    drawFilledRect(renderer, background, panel);
-    drawOutlineRect(renderer, background, border);
-
-    int fillWidth = (int)((w - 36) * clamp(percent, 0.0, 100.0) / 100.0);
-    SDL_Rect fill = {x + 18, y + h - 22, fillWidth, 10};
-    drawFilledRect(renderer, fill, fillColor);
-}
-
-void drawButton(SDL_Renderer* renderer, TTF_Font* font, const Button& button, bool active) {
-    SDL_Color buttonColor = active ? SDL_Color{62, 118, 255, 255} : SDL_Color{35, 43, 58, 255};
-    SDL_Color borderColor = active ? SDL_Color{125, 161, 255, 255} : SDL_Color{70, 82, 100, 255};
-    SDL_Color textColor = {240, 244, 250, 255};
-
-    drawFilledRect(renderer, button.rect, buttonColor);
-    drawOutlineRect(renderer, button.rect, borderColor);
-    drawText(renderer, font, button.label, button.rect.x + 13, button.rect.y + 9, textColor);
-}
-
 void sortProcesses(vector<ProcessInfo>& processes, SortMode mode) {
     if (mode == SortMode::CPU) {
-        stable_sort(processes.begin(), processes.end(), [](const ProcessInfo& a, const ProcessInfo& b) {
-            if (fabs(a.cpuPercent - b.cpuPercent) < 0.05) return a.pid < b.pid;
+        sort(processes.begin(), processes.end(), [](const ProcessInfo& a, const ProcessInfo& b) {
             return a.cpuPercent > b.cpuPercent;
         });
     } else if (mode == SortMode::MEMORY) {
-        stable_sort(processes.begin(), processes.end(), [](const ProcessInfo& a, const ProcessInfo& b) {
-            if (a.memoryKB == b.memoryKB) return a.pid < b.pid;
+        sort(processes.begin(), processes.end(), [](const ProcessInfo& a, const ProcessInfo& b) {
             return a.memoryKB > b.memoryKB;
         });
     } else {
-        stable_sort(processes.begin(), processes.end(), [](const ProcessInfo& a, const ProcessInfo& b) {
-            if (a.name == b.name) return a.pid < b.pid;
+        sort(processes.begin(), processes.end(), [](const ProcessInfo& a, const ProcessInfo& b) {
             return a.name < b.name;
         });
     }
@@ -488,37 +490,64 @@ bool pointInRect(int x, int y, const SDL_Rect& rect) {
     return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
 }
 
+string shorten(const string& text, size_t maxLen) {
+    if (text.size() <= maxLen) return text;
+    if (maxLen <= 3) return text.substr(0, maxLen);
+    return text.substr(0, maxLen - 3) + "...";
+}
+
+void drawSummaryCard(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* smallFont,
+                     int x, int y, const string& label, const string& value,
+                     SDL_Texture* iconTexture, SDL_Color accent) {
+    SDL_Rect card = {x, y, 320, 82};
+    drawSoftPanel(renderer, card, SDL_Color{18, 24, 35, 255}, SDL_Color{58, 70, 90, 255});
+
+    drawText(renderer, smallFont, label, x + 22, y + 17, SDL_Color{147, 158, 174, 255});
+    drawText(renderer, font, shorten(value, 23), x + 22, y + 44, SDL_Color{235, 239, 245, 255});
+
+    SDL_Rect badge = {x + 262, y + 21, 38, 38};
+    drawFilledRect(renderer, badge, SDL_Color{27, 35, 49, 255});
+    drawOutlineRect(renderer, badge, accent);
+
+    if (iconTexture) {
+        SDL_Rect icon = {x + 269, y + 28, 24, 24};
+        SDL_RenderCopy(renderer, iconTexture, nullptr, &icon);
+    } else {
+        SDL_Rect dot = {x + 276, y + 35, 10, 10};
+        drawFilledRect(renderer, dot, accent);
+    }
+}
+
 void drawProcessTable(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* smallFont,
                       const vector<ProcessInfo>& processes, int scrollOffset,
                       int selectedPid, SortMode sortMode) {
-    SDL_Color panel = {22, 28, 39, 255};
-    SDL_Color header = {33, 41, 55, 255};
-    SDL_Color border = {65, 77, 96, 255};
+    SDL_Color panel = {18, 24, 35, 255};
+    SDL_Color header = {30, 38, 53, 255};
+    SDL_Color border = {58, 70, 90, 255};
     SDL_Color text = {235, 239, 245, 255};
-    SDL_Color muted = {160, 169, 181, 255};
+    SDL_Color muted = {147, 158, 174, 255};
     SDL_Color line = {45, 55, 72, 255};
-    SDL_Color selected = {42, 77, 135, 255};
+    SDL_Color selected = {43, 82, 145, 255};
 
-    SDL_Rect table = {40, 360, 1020, 360};
-    drawFilledRect(renderer, table, panel);
-    drawOutlineRect(renderer, table, border);
+    SDL_Rect table = {40, 470, 1020, 286};
+    drawSoftPanel(renderer, table, panel, border);
 
-    SDL_Rect tableHeader = {40, 360, 1020, 44};
+    SDL_Rect tableHeader = {40, 470, 1020, 46};
     drawFilledRect(renderer, tableHeader, header);
 
-    drawText(renderer, font, "Running Processes", 58, 371, text);
-    drawText(renderer, smallFont, "Sorted by: " + sortModeName(sortMode), 860, 375, muted);
+    drawText(renderer, font, "Running Processes", 58, 482, text);
+    drawText(renderer, smallFont, "Sorted by: " + sortModeName(sortMode), 850, 486, muted);
 
-    drawText(renderer, smallFont, "PID", 60, 420, muted);
-    drawText(renderer, smallFont, "Process Name", 150, 420, muted);
-    drawText(renderer, smallFont, "CPU", 610, 420, muted);
-    drawText(renderer, smallFont, "Memory", 760, 420, muted);
+    drawText(renderer, smallFont, "PID", 60, 532, muted);
+    drawText(renderer, smallFont, "Process Name", 150, 532, muted);
+    drawText(renderer, smallFont, "CPU", 610, 532, muted);
+    drawText(renderer, smallFont, "Memory", 760, 532, muted);
 
-    drawLine(renderer, 55, 445, 1045, 445, line);
+    drawLine(renderer, 55, 557, 1045, 557, line);
 
-    const int rowHeight = 28;
-    const int firstRowY = 453;
-    const int maxRows = 9;
+    const int rowHeight = 27;
+    const int firstRowY = 566;
+    const int maxRows = 6;
 
     for (int i = 0; i < maxRows; i++) {
         int index = scrollOffset + i;
@@ -530,39 +559,30 @@ void drawProcessTable(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* smallFon
         if (p.pid == selectedPid) {
             SDL_Rect selectedRow = {52, y - 3, 990, rowHeight};
             drawFilledRect(renderer, selectedRow, selected);
-        }
-
-        if (i % 2 == 1 && p.pid != selectedPid) {
+        } else if (i % 2 == 1) {
             SDL_Rect altRow = {52, y - 3, 990, rowHeight};
-            drawFilledRect(renderer, altRow, SDL_Color{26, 33, 45, 255});
-        }
-
-        string processName = p.name;
-        if (processName.size() > 38) {
-            processName = processName.substr(0, 35) + "...";
+            drawFilledRect(renderer, altRow, SDL_Color{22, 30, 43, 255});
         }
 
         drawText(renderer, smallFont, to_string(p.pid), 60, y, text);
-        drawText(renderer, smallFont, processName, 150, y, text);
+        drawText(renderer, smallFont, shorten(p.name, 38), 150, y, text);
         drawText(renderer, smallFont, formatPercent(p.cpuPercent), 610, y, text);
         drawText(renderer, smallFont, formatKB(p.memoryKB), 760, y, text);
     }
 
     string scrollText = "Showing: " + to_string(min(scrollOffset + maxRows, (int)processes.size())) + " / " + to_string(processes.size());
-    drawText(renderer, smallFont, scrollText, 58, 694, muted);
-    drawText(renderer, smallFont, "Click a row to select a process. Use mouse wheel or Up/Down to scroll.", 330, 694, muted);
+    drawText(renderer, smallFont, scrollText, 58, 727, muted);
+    drawText(renderer, smallFont, "Click a row to select. Mouse wheel or Up/Down scrolls.", 360, 727, muted);
 }
 
 void drawFooter(SDL_Renderer* renderer, TTF_Font* smallFont, bool paused) {
-    SDL_Color muted = {160, 169, 181, 255};
+    SDL_Color muted = {147, 158, 174, 255};
     SDL_Color warning = {255, 196, 87, 255};
 
     string controls = "Controls: C = CPU | M = Memory | N = Name | P = pause updates | R = reset scroll | Esc = quit";
-    drawText(renderer, smallFont, controls, 40, 755, paused ? warning : muted);
+    drawText(renderer, smallFont, controls, 40, 786, paused ? warning : muted);
 
-    if (paused) {
-        drawText(renderer, smallFont, "Updates paused", 920, 755, warning);
-    }
+    if (paused) drawText(renderer, smallFont, "Updates paused", 930, 786, warning);
 }
 
 int main(int argc, char* argv[]) {
@@ -641,9 +661,9 @@ int main(int argc, char* argv[]) {
     SDL_Texture* iconTexture = loadIconTexture(renderer);
 
     vector<Button> buttons = {
-        {{40, 300, 135, 42}, "Sort: CPU", SortMode::CPU},
-        {{190, 300, 165, 42}, "Sort: Memory", SortMode::MEMORY},
-        {{370, 300, 145, 42}, "Sort: Name", SortMode::NAME}
+        {{40, 405, 150, 44}, "Sort: CPU", SortMode::CPU},
+        {{210, 405, 180, 44}, "Sort: Memory", SortMode::MEMORY},
+        {{410, 405, 160, 44}, "Sort: Name", SortMode::NAME}
     };
 
     bool running = true;
@@ -682,14 +702,12 @@ int main(int argc, char* argv[]) {
                 int my = event.button.y;
 
                 for (const Button& button : buttons) {
-                    if (pointInRect(mx, my, button.rect)) {
-                        sortMode = button.mode;
-                    }
+                    if (pointInRect(mx, my, button.rect)) sortMode = button.mode;
                 }
 
-                const int rowHeight = 28;
-                const int firstRowY = 453;
-                const int maxRows = 9;
+                const int rowHeight = 27;
+                const int firstRowY = 566;
+                const int maxRows = 6;
                 for (int i = 0; i < maxRows; i++) {
                     int rowY = firstRowY + i * rowHeight;
                     SDL_Rect rowRect = {52, rowY - 3, 990, rowHeight};
@@ -702,7 +720,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        int maxScroll = max(0, (int)processes.size() - 9);
+        int maxScroll = max(0, (int)processes.size() - 6);
         scrollOffset = clamp(scrollOffset, 0, maxScroll);
 
         Uint32 now = SDL_GetTicks();
@@ -711,60 +729,43 @@ int main(int argc, char* argv[]) {
             processes = readProcesses();
             sortProcesses(processes, sortMode);
             lastUpdate = now;
+        } else {
+            sortProcesses(processes, sortMode);
         }
 
-        setColor(renderer, SDL_Color{13, 18, 26, 255});
-        SDL_RenderClear(renderer);
+        drawGradientBackground(renderer);
 
-        // Header panel
-        SDL_Rect header = {0, 0, WINDOW_WIDTH, 112};
-        drawFilledRect(renderer, header, SDL_Color{18, 24, 34, 255});
-        drawLine(renderer, 0, 112, WINDOW_WIDTH, 112, SDL_Color{48, 58, 74, 255});
+        SDL_Rect header = {0, 0, WINDOW_WIDTH, 128};
+        drawFilledRect(renderer, header, SDL_Color{14, 20, 31, 255});
+        drawLine(renderer, 0, 128, WINDOW_WIDTH, 128, SDL_Color{49, 61, 80, 255});
 
         if (iconTexture) {
-            SDL_Rect iconDst = {38, 27, 56, 56};
+            SDL_Rect iconDst = {40, 32, 56, 56};
             SDL_RenderCopy(renderer, iconTexture, nullptr, &iconDst);
         } else {
-            drawIconFallback(renderer, 38, 27);
+            drawIconFallback(renderer, 40, 32);
         }
 
-        drawText(renderer, titleFont, "OS System Monitor", 112, 24, SDL_Color{245, 248, 252, 255});
-        drawText(renderer, font, "Live C++ / SDL2 dashboard for CPU, memory, disk, and Linux process activity", 114, 64, SDL_Color{166, 176, 190, 255});
-        drawText(renderer, smallFont, paused ? "PAUSED" : "LIVE", 995, 44, paused ? SDL_Color{255, 196, 87, 255} : SDL_Color{126, 231, 135, 255});
+        drawText(renderer, titleFont, "OS System Monitor", 120, 27, SDL_Color{245, 248, 252, 255});
+        drawText(renderer, font, "Live C++ / SDL2 dashboard for CPU, memory, disk, and Linux process activity", 122, 72, SDL_Color{166, 176, 190, 255});
 
-        // Summary cards
-        SDL_Rect card1 = {40, 130, 320, 72};
-        SDL_Rect card2 = {390, 130, 320, 72};
-        SDL_Rect card3 = {740, 130, 320, 72};
-        drawCard(renderer, card1);
-        drawCard(renderer, card2);
-        drawCard(renderer, card3);
+        SDL_Rect liveDot = {1008, 45, 10, 10};
+        drawFilledRect(renderer, liveDot, paused ? SDL_Color{255, 196, 87, 255} : SDL_Color{126, 231, 135, 255});
+        drawText(renderer, smallFont, paused ? "PAUSED" : "LIVE", 1024, 39, paused ? SDL_Color{255, 196, 87, 255} : SDL_Color{126, 231, 135, 255});
 
-        drawStatusIcon(renderer, 300, 145, SDL_Color{88, 166, 255, 255});
-        drawStatusIcon(renderer, 650, 145, SDL_Color{126, 231, 135, 255});
-        drawStatusIcon(renderer, 1000, 145, SDL_Color{255, 184, 87, 255});
-
-        drawText(renderer, smallFont, "Selected Process", 60, 142, SDL_Color{160, 169, 181, 255});
         string selectedText = selectedPid == -1 ? "None" : to_string(selectedPid) + " - " + selectedName;
-        if (selectedText.size() > 25) selectedText = selectedText.substr(0, 22) + "...";
-        drawText(renderer, font, selectedText, 60, 168, SDL_Color{235, 239, 245, 255});
+        drawSummaryCard(renderer, font, smallFont, 40, 150, "Selected Process", selectedText, iconTexture, SDL_Color{88, 166, 255, 255});
+        drawSummaryCard(renderer, font, smallFont, 390, 150, "Update Interval", paused ? "Paused" : "Every 500ms", iconTexture, SDL_Color{126, 231, 135, 255});
+        drawSummaryCard(renderer, font, smallFont, 740, 150, "Processes Found", to_string(processes.size()), iconTexture, SDL_Color{255, 184, 87, 255});
 
-        drawText(renderer, smallFont, "Update Interval", 410, 142, SDL_Color{160, 169, 181, 255});
-        drawText(renderer, font, paused ? "Paused" : "Every 500ms", 410, 168, SDL_Color{235, 239, 245, 255});
+        drawMetricCard(renderer, font, smallFont, 40, 255, "CPU Usage", "Total processor activity", stats.cpuPercent, SDL_Color{88, 166, 255, 255}, 0);
+        drawMetricCard(renderer, font, smallFont, 390, 255, "Memory Usage", formatKB(stats.memoryUsedKB) + " / " + formatKB(stats.memoryTotalKB), stats.memoryPercent, SDL_Color{126, 231, 135, 255}, 1);
+        drawMetricCard(renderer, font, smallFont, 740, 255, "Disk Usage", formatBytes(stats.diskUsedBytes) + " / " + formatBytes(stats.diskTotalBytes), stats.diskPercent, SDL_Color{255, 184, 87, 255}, 2);
 
-        drawText(renderer, smallFont, "Processes Found", 760, 142, SDL_Color{160, 169, 181, 255});
-        drawText(renderer, font, to_string(processes.size()), 760, 168, SDL_Color{235, 239, 245, 255});
-
-        // Resource cards
-        drawBar(renderer, font, smallFont, 40, 220, 320, 64, "CPU Usage", "Total processor activity", stats.cpuPercent, SDL_Color{88, 166, 255, 255}, 0);
-        drawBar(renderer, font, smallFont, 390, 220, 320, 64, "Memory Usage", formatKB(stats.memoryUsedKB) + " / " + formatKB(stats.memoryTotalKB), stats.memoryPercent, SDL_Color{126, 231, 135, 255}, 1);
-        drawBar(renderer, font, smallFont, 740, 220, 320, 64, "Disk Usage", formatBytes(stats.diskUsedBytes) + " / " + formatBytes(stats.diskTotalBytes), stats.diskPercent, SDL_Color{255, 184, 87, 255}, 2);
-
-        // Buttons
         for (const Button& button : buttons) {
             drawButton(renderer, font, button, button.mode == sortMode);
         }
-        drawText(renderer, smallFont, "Tip: click buttons or press C / M / N. Default is Memory to keep the table stable.", 540, 313, SDL_Color{160, 169, 181, 255});
+        drawText(renderer, smallFont, "Tip: press C / M / N to sort. Default is Memory so the table stays calmer.", 610, 419, SDL_Color{147, 158, 174, 255});
 
         drawProcessTable(renderer, font, smallFont, processes, scrollOffset, selectedPid, sortMode);
         drawFooter(renderer, smallFont, paused);
