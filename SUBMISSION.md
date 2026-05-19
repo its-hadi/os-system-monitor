@@ -5,7 +5,7 @@
 Paste your GitHub repo URL here:
 
 ```text
-https://github.com/YOUR_USERNAME/os-system-monitor-sdl2
+https://github.com/its-hadi/os-system-monitor
 ```
 
 ## Compilation and running instructions
